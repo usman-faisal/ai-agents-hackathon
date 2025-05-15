@@ -34,6 +34,7 @@ model User {
 
   // Relations
   UserProfile UserProfile?
+  icps ICP[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -60,6 +61,66 @@ model UserProfile {
 
   user User @relation(fields: [userId], references: [id])
 }
+
+
+model ICP {
+  id          String   @id @default(cuid())
+  userId      String   @db.Uuid()
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade) // Link to the User
+
+  name        String   // User-defined name for this ICP, e.g., "Early-Stage SaaS Founders"
+  description String?
+  isActive    Boolean  @default(true) // To enable/disable this ICP
+
+  industries                 String[] // e.g., ["SaaS", "FinTech", "Healthcare Technology"]
+  // companySize_employees_min  Int?
+  // companySize_employees_max  Int?
+  // companySize_revenue_min    Decimal? // Using Decimal for monetary values
+  // companySize_revenue_max    Decimal?
+  locations                  String[] // e.g., ["San Francisco Bay Area", "New York City", "Remote (US)"]
+  fundingStages              String[] // e.g., ["Seed", "Series A", "Bootstrapped", "Public"]
+  technologiesUsed           String[] // e.g., ["React", "Node.js", "AWS", "Kubernetes"]
+  businessModels             String[] // e.g., ["B2B", "B2C", "Marketplace", "Subscription"]
+  companyKeywords            String[] // Other specific keywords about the company, e.g., ["AI-driven", "sustainable", "growth-stage"]
+
+  // --- Individual/Contact Criteria (within target companies) ---
+  jobTitles                  String[] // e.g., ["CEO", "Founder", "CTO", "VP of Engineering", "Head of Product"]
+  seniorityLevels            String[] // e.g., ["C-Level", "VP", "Director", "Manager"]
+  departments                String[] // e.g., ["Engineering", "Product", "Executive", "Marketing"]
+  skillsKeywords             String[] // e.g., ["Python", "Go", "Product Management", "Growth Hacking"]
+  responsibilitiesKeywords   String[] // e.g., ["P&L Management", "Team Leadership", "Software Architecture"]
+
+  // Key field for your "Builders > Content Creators" requirement
+  actionTakerSignals         String[] // e.g., ["launched product", "founded company", "developed X", "speaker at Y", "patent holder", "merged", "acquired"]
+
+  painPointsKeywords         String[] // Keywords related to problems your product solves for them, e.g., ["inefficient workflow", "data silos", "scaling challenges"]
+
+  // --- Exclusion Criteria ---
+  excludedIndustries         String[]
+  excludedJobTitles          String[]
+  excludedCompanyKeywords    String[] // Keywords for companies to exclude
+  excludedIndividualKeywords String[] // Keywords for individuals to exclude
+
+  // --- Custom & LLM Instructions ---
+  // For criteria that don't fit structured fields or need nuanced interpretation
+  // customCriteriaNotes        String?  @db.Text // Free-form text for complex or unique criteria
+  // llmInstructions            String?  @db.Text // Specific instructions for the LLM on how to interpret this ICP, e.g., "Focus heavily on recent (<1 year) actionTakerSignals"
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Optional: If you want to track which leads were generated from this ICP
+  // leads Lead[]
+}
+
+// You might also have a Lead model eventually
+// model Lead {
+//   id String @id @default(cuid())
+//   // ... lead details
+//   icpId String? // Optional: if you want to link a lead back to the ICP that generated it
+//   icp   ICP?    @relation(fields: [icpId], references: [id])
+//   // ... other relations and fields
+// }
 
 enum Role {
   ADMIN
