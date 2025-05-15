@@ -30,6 +30,13 @@ import { Request, Response } from 'express';
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
+  @Get('current-user')
+  @UseGuards(AuthGuard)
+  @Roles(...Object.values(Role))
+  getCurrentUser(@Req() request: Request) {
+    return request.user;
+  }
+
   @Post('register')
   @UseInterceptors(FileInterceptor('image'))
   register(

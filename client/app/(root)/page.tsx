@@ -1,7 +1,9 @@
+import {Heading} from "lucide-react";
+
 export default function Home() {
   return (
     <div>
-      <div></div>
+        <Heading>Hello world</Heading>
     </div>
   );
 }
