@@ -41,7 +41,7 @@ const LoginPage = () => {
       setUser(response.user);
       localStorage.setItem("token", response.token);
       toast.success("Login successfull");
-      router.push("/");
+      // router.push("/");
     } else return toast.error(response as string);
   };
 

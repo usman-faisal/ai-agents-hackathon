@@ -38,12 +38,12 @@ export class AuthController {
   }
 
   @Post('register')
-  @UseInterceptors(FileInterceptor('image'))
+  // @UseInterceptors(FileInterceptor('image'))
   register(
-    @UploadedFile() image: MulterFile,
+    // @UploadedFile() image: MulterFile,
     @Body(ValidationPipe) registerDto: RegisterDto,
   ) {
-    return this.authService.register(registerDto, image);
+    return this.authService.register(registerDto);
   }
 
   @Post('login')
