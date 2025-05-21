@@ -41,3 +41,19 @@ export type JwtPayload = {
   email: string;
   role: Role;
 };
+
+// Text content type
+export interface TextContent {
+  type: 'text';
+  text: string;
+}
+
+// File content type for handling uploaded files
+export interface FileContent {
+  type: 'file';
+  source_type: string; // Default is 'base64'
+  data: string; // Base64 encoded file data
+  mime_type: string; // MIME type of the file (e.g., 'application/pdf')
+}
+
+export type ContentType = TextContent | FileContent;

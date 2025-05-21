@@ -1,12 +1,17 @@
 "use client"
 
-import type React from "react"
 import { useState, useRef, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
-import { Paperclip, Mic, Send, X, User, Bot, AlertCircle, Loader2 } from "lucide-react"
+import { Paperclip, Mic, Send, X, User, Bot, AlertCircle, Loader2, RefreshCw } from 'lucide-react'
 import { cn } from "@/lib/utils"
 import axios from "axios"
+import Markdown from 'react-markdown'
+import { ScrollArea } from "@/components/ui/scroll-area"
+import { Avatar } from "@/components/ui/avatar"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { SidebarTrigger, useSidebar } from "@/components/ui/sidebar"
+import { ChatSidebar } from "./chat-sidebar"
 
 // Define the structure of a chat message
 interface ChatMessageFile {
@@ -28,7 +33,7 @@ interface ChatMessage {
 interface ApiHistoryMessage {
     id: string;
     role: "user" | "assistant";
-    content: string; 
+    content: string;
     createdAt: string;
 }
 
@@ -36,20 +41,22 @@ interface ApiAssistantResponseMessage {
     aiMessage: string
 }
 
-
 export default function ChatInterface() {
     const [messages, setMessages] = useState<ChatMessage[]>([])
     const [inputText, setInputText] = useState("")
     const [inputFiles, setInputFiles] = useState<File[]>([])
-    
+
     const [isLoadingHistory, setIsLoadingHistory] = useState(true)
     const [isSending, setIsSending] = useState(false)
     const [error, setError] = useState<string | null>(null)
 
     const fileInputRef = useRef<HTMLInputElement>(null)
     const chatContainerRef = useRef<HTMLDivElement>(null)
+    const textareaRef = useRef<HTMLTextAreaElement>(null)
 
     const API_BASE_URL = "http://localhost:8001/api/v1/icp"
+
+    const { state } = useSidebar()
 
     // Scroll to bottom of chat messages
     useEffect(() => {
@@ -57,6 +64,14 @@ export default function ChatInterface() {
             chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight
         }
     }, [messages])
+
+    // Auto-resize textarea based on content
+    useEffect(() => {
+        if (textareaRef.current) {
+            textareaRef.current.style.height = 'auto';
+            textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 200)}px`;
+        }
+    }, [inputText]);
 
     // Fetch chat history on mount
     const fetchChatHistory = useCallback(async () => {
@@ -138,9 +153,9 @@ export default function ChatInterface() {
             const response = await axios.post<ApiAssistantResponseMessage>(`${API_BASE_URL}/chat`, formData, {
                 withCredentials: true,
             })
-            
+
             // Update user message status to 'sent'
-            setMessages(prev => prev.map(msg => 
+            setMessages(prev => prev.map(msg =>
                 msg.id === userMessageId ? { ...msg, status: "sent" } : msg
             ));
 
@@ -148,9 +163,6 @@ export default function ChatInterface() {
                 id: `assistant-${Date.now()}`,
                 role: "assistant",
                 text: response.data.aiMessage,
-                // Assuming API response for new message might not have 'files' in the same way,
-                // or if it does, map them here.
-                // files: response.data.source_documents?.map(...) // Example if bot can return files
                 timestamp: new Date().toISOString(),
                 status: "sent",
             }
@@ -159,14 +171,14 @@ export default function ChatInterface() {
         } catch (err) {
             console.error("Error sending message:", err)
             setError("Failed to send message.")
-            setMessages(prev => prev.map(msg => 
+            setMessages(prev => prev.map(msg =>
                 msg.id === userMessageId ? { ...msg, status: "failed" } : msg
             ));
         } finally {
             setIsSending(false)
         }
     }
-    
+
     const handleTextareaKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
@@ -177,159 +189,284 @@ export default function ChatInterface() {
     };
 
     return (
-        <div className="flex flex-col h-screen bg-background">
-            {/* Chat messages area */}
-            <div ref={chatContainerRef} className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4">
-                {isLoadingHistory && (
-                    <div className="flex justify-center items-center h-full">
-                        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                        <p className="ml-2 text-muted-foreground">Loading chat history...</p>
-                    </div>
+        <div className="flex h-screen w-full">
+            <ChatSidebar />
+            <div
+                className={cn(
+                    "flex flex-col h-screen bg-background transition-all duration-300",
+                    state === "expanded" ? "w-[100%]" : "w-full",
                 )}
-                {!isLoadingHistory && error && messages.length === 0 && (
-                     <div className="flex flex-col justify-center items-center h-full text-center">
-                        <AlertCircle className="h-12 w-12 text-destructive mb-4" />
-                        <p className="text-lg font-semibold text-destructive">Error</p>
-                        <p className="text-muted-foreground">{error}</p>
-                        <Button onClick={fetchChatHistory} className="mt-4">Try Again</Button>
+            >
+                {/* Header */}
+                <header className="border-b py-3 px-4 bg-card shadow-sm">
+                    <div className=" mx-auto flex items-center justify-between">
+                        <div className="flex gap-4">
+                            <SidebarTrigger />
+                            <h1 className="text-xl font-semibold">Chat Assistant</h1>
+                        </div>
+                        <TooltipProvider>
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <Button variant="outline" size="icon" onClick={fetchChatHistory} disabled={isLoadingHistory}>
+                                        {isLoadingHistory ? (
+                                            <Loader2 className="h-4 w-4 animate-spin" />
+                                        ) : (
+                                            <RefreshCw className="h-4 w-4" />
+                                        )}
+                                    </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                    <p>Refresh chat history</p>
+                                </TooltipContent>
+                            </Tooltip>
+                        </TooltipProvider>
                     </div>
-                )}
-                {!isLoadingHistory && !error && messages.length === 0 && (
-                     <div className="flex justify-center items-center h-full">
-                        <p className="text-muted-foreground">No messages yet. Start the conversation!</p>
-                    </div>
-                )}
+                </header>
 
-                {messages.map((msg) => (
-                    <div key={msg.id} className={cn("flex", msg.role === "user" ? "justify-end" : "justify-start")}>
-                        <div className={cn(
-                            "max-w-xs md:max-w-md lg:max-w-lg xl:max-w-2xl p-3 rounded-lg shadow",
-                            msg.role === "user" ? "bg-primary text-primary-foreground" : "bg-muted"
-                        )}>
-                            <div className="flex items-center mb-1">
-                                {msg.role === "user" ? (
-                                    <User className="h-5 w-5 mr-2 flex-shrink-0" />
-                                ) : (
-                                    <Bot className="h-5 w-5 mr-2 flex-shrink-0" />
-                                )}
-                                <span className="font-semibold text-sm">
-                                    {msg.role === "user" ? "You" : "Assistant"}
-                                </span>
-                                {msg.role === "user" && msg.status === "sending" && <Loader2 className="h-3 w-3 ml-2 animate-spin" />}
-                                {msg.role === "user" && msg.status === "failed" && <AlertCircle className="h-3 w-3 ml-2 text-destructive" />}
+                {/* Chat messages area */}
+                <ScrollArea className="flex-1 p-4 md:p-6">
+                    <div className="w-full mx-auto space-y-6 max-w-5xl">
+                        {isLoadingHistory && (
+                            <div className="flex flex-col justify-center items-center h-64 py-12">
+                                <Loader2 className="h-10 w-10 animate-spin text-primary mb-4" />
+                                <p className="text-muted-foreground">Loading chat history...</p>
                             </div>
-                            <p className="whitespace-pre-wrap break-words">{msg.text}</p>
-                            {msg.files && msg.files.length > 0 && (
-                                <div className="mt-2 space-y-1">
-                                    {msg.files.map((file, index) => (
-                                        <div key={index} className={cn(
-                                            "text-xs p-1.5 rounded flex items-center gap-1.5",
-                                            msg.role === "user" ? "bg-primary-darker text-primary-foreground" : "bg-background border"
-                                        )}>
-                                            <Paperclip className="h-3 w-3 flex-shrink-0" />
-                                            <span className="truncate">{file.name}</span>
-                                            {file.size && (
-                                                <span className="text-xs opacity-75 whitespace-nowrap">
-                                                    ({(file.size / 1024).toFixed(1)} KB)
-                                                </span>
-                                            )}
+                        )}
+
+                        {!isLoadingHistory && error && messages.length === 0 && (
+                            <div className="flex flex-col justify-center items-center h-64 py-12 text-center">
+                                <AlertCircle className="h-12 w-12 text-destructive mb-4" />
+                                <p className="text-lg font-semibold text-destructive">Error</p>
+                                <p className="text-muted-foreground mb-4">{error}</p>
+                                <Button onClick={fetchChatHistory} variant="outline" className="gap-2">
+                                    <RefreshCw className="h-4 w-4" />
+                                    Try Again
+                                </Button>
+                            </div>
+                        )}
+
+                        {!isLoadingHistory && !error && messages.length === 0 && (
+                            <div className="flex flex-col justify-center items-center h-64 py-12 text-center">
+                                <Bot className="h-16 w-16 text-muted-foreground mb-4" />
+                                <h2 className="text-xl font-semibold mb-2">Start a conversation</h2>
+                                <p className="text-muted-foreground max-w-md">
+                                    Ask a question or share files to begin chatting with the assistant.
+                                </p>
+                            </div>
+                        )}
+
+                        {messages.map((msg, index) => (
+                            <div key={msg.id} className={cn("flex gap-3", msg.role === "user" ? "justify-end" : "justify-start")}>
+                                {msg.role === "assistant" && (
+                                    <Avatar className="h-8 w-8 mt-1">
+                                        <div className="bg-primary/10 h-full w-full rounded-full flex items-center justify-center">
+                                            <Bot className="h-4 w-4 text-primary" />
                                         </div>
-                                    ))}
+                                    </Avatar>
+                                )}
+
+                                <div
+                                    className={cn(
+                                        "max-w-xs sm:max-w-md md:max-w-lg lg:max-w-xl",
+                                        "flex flex-col gap-1",
+                                        msg.role === "user" ? "items-end" : "items-start",
+                                    )}
+                                >
+                                    <div
+                                        className={cn(
+                                            "px-4 py-3 rounded-2xl shadow-sm",
+                                            msg.role === "user"
+                                                ? "bg-primary text-primary-foreground rounded-tr-none"
+                                                : "bg-muted rounded-tl-none",
+                                        )}
+                                    >
+                                        <div className="prose prose-sm dark:prose-invert max-w-none">
+                                            <Markdown>{msg.text}</Markdown>
+                                        </div>
+
+                                        {msg.files && msg.files.length > 0 && (
+                                            <div className="mt-3 space-y-1.5">
+                                                <p className="text-xs font-medium opacity-70">Attachments:</p>
+                                                {msg.files.map((file, fileIndex) => (
+                                                    <div
+                                                        key={fileIndex}
+                                                        className={cn(
+                                                            "text-xs p-2 rounded-lg flex items-center gap-2",
+                                                            msg.role === "user"
+                                                                ? "bg-primary-foreground/10 text-primary-foreground"
+                                                                : "bg-background border",
+                                                        )}
+                                                    >
+                                                        <Paperclip className="h-3.5 w-3.5 flex-shrink-0" />
+                                                        <span className="truncate flex-1">{file.name}</span>
+                                                        {file.size && (
+                                                            <span className="text-xs opacity-75 whitespace-nowrap">
+                                                                ({(file.size / 1024).toFixed(1)} KB)
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <div className="flex items-center gap-2 px-1 text-xs text-muted-foreground">
+                                        {msg.role === "user" && msg.status === "sending" && (
+                                            <span className="flex items-center gap-1">
+                                                <Loader2 className="h-3 w-3 animate-spin" />
+                                                Sending...
+                                            </span>
+                                        )}
+
+                                        {msg.role === "user" && msg.status === "failed" && (
+                                            <span className="flex items-center gap-1 text-destructive">
+                                                <AlertCircle className="h-3 w-3" />
+                                                Failed to send
+                                            </span>
+                                        )}
+
+                                        <time dateTime={msg.timestamp}>
+                                            {new Date(msg.timestamp).toLocaleTimeString([], {
+                                                hour: "2-digit",
+                                                minute: "2-digit",
+                                            })}
+                                        </time>
+                                    </div>
+                                </div>
+
+                                {msg.role === "user" && (
+                                    <Avatar className="h-8 w-8 mt-1">
+                                        <div className="bg-primary h-full w-full rounded-full flex items-center justify-center">
+                                            <User className="h-4 w-4 text-primary-foreground" />
+                                        </div>
+                                    </Avatar>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                </ScrollArea>
+
+                {/* Input area */}
+                <div className="border-t bg-card p-3 md:p-4">
+                    <div className="max-w-5xl mx-auto">
+                        {/* Global error display for sending */}
+                        {error && !isSending && messages.some((m) => m.status !== "failed") && (
+                            <div className="mb-3 p-2.5 bg-destructive/10 border border-destructive/30 rounded-lg text-destructive text-sm flex items-center">
+                                <AlertCircle className="h-4 w-4 mr-2 flex-shrink-0" />
+                                {error}
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="ml-auto h-7 text-destructive hover:text-destructive hover:bg-destructive/10"
+                                    onClick={() => setError(null)}
+                                >
+                                    Dismiss
+                                </Button>
+                            </div>
+                        )}
+
+                        <div className="rounded-xl border shadow-sm bg-background overflow-hidden">
+                            {/* File attachments display */}
+                            {inputFiles.length > 0 && (
+                                <div className="px-4 pt-3 pb-1">
+                                    <p className="text-xs font-medium mb-2 text-muted-foreground">Attachments:</p>
+                                    <div className="flex flex-wrap gap-2 mb-2">
+                                        {inputFiles.map((file, index) => (
+                                            <div key={index} className="flex items-center gap-2 bg-muted px-3 py-1.5 rounded-full text-sm">
+                                                <Paperclip className="h-3.5 w-3.5 text-muted-foreground" />
+                                                <span className="truncate max-w-[150px]">{file.name}</span>
+                                                <button
+                                                    onClick={() => removeFile(index)}
+                                                    className="text-muted-foreground hover:text-foreground disabled:opacity-50 rounded-full hover:bg-background/50 p-0.5"
+                                                    disabled={isSending}
+                                                    type="button"
+                                                >
+                                                    <X className="h-3.5 w-3.5" />
+                                                    <span className="sr-only">Remove {file.name}</span>
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
                                 </div>
                             )}
-                            <p className="text-xs opacity-60 mt-1.5 text-right">
-                                {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                            </p>
-                        </div>
-                    </div>
-                ))}
-            </div>
 
-            {/* Input area */}
-            <div className="border-t bg-background p-3 md:p-4">
-                 {/* Global error display for sending */}
-                 {error && !isSending && messages.some(m=>m.status !== 'failed') && ( // Show global error if not tied to a specific message that failed
-                    <div className="mb-2 p-2 bg-destructive/10 border border-destructive/30 rounded-md text-destructive text-sm flex items-center">
-                        <AlertCircle className="h-4 w-4 mr-2 flex-shrink-0" />
-                        {error}
-                    </div>
-                )}
+                            <div className="flex items-end p-3">
+                                <Textarea
+                                    ref={textareaRef}
+                                    value={inputText}
+                                    onChange={(e) => setInputText(e.target.value)}
+                                    onKeyDown={handleTextareaKeyDown}
+                                    placeholder="Type your message..."
+                                    className="min-h-[60px] max-h-[200px] resize-none border-0 focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none p-0 py-1 bg-transparent"
+                                    disabled={isSending}
+                                />
+                            </div>
 
-                <div className="w-full max-w-3xl mx-auto border rounded-lg shadow-sm bg-card">
-                    <div className="p-3">
-                        <Textarea
-                            value={inputText}
-                            onChange={(e) => setInputText(e.target.value)}
-                            onKeyDown={handleTextareaKeyDown}
-                            placeholder="Type your message or drop files..."
-                            className="min-h-[80px] resize-none border-0 focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none p-0"
-                            disabled={isSending}
-                        />
-                    </div>
+                            <div className="flex items-center px-3 pb-3 pt-1">
+                                <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" multiple />
 
-                    {/* File attachments display */}
-                    {inputFiles.length > 0 && (
-                        <div className="px-3 pb-2">
-                            <p className="text-xs font-medium mb-1 text-muted-foreground">Attachments:</p>
-                            <div className="flex flex-wrap gap-2">
-                                {inputFiles.map((file, index) => (
-                                    <div key={index} className="flex items-center gap-1 bg-muted px-2 py-1 rounded text-sm">
-                                        <Paperclip className="h-3 w-3 text-muted-foreground" />
-                                        <span className="truncate max-w-[150px]">{file.name}</span>
-                                        <button 
-                                            onClick={() => removeFile(index)} 
-                                            className="text-muted-foreground hover:text-foreground disabled:opacity-50"
-                                            disabled={isSending}
-                                        >
-                                            <X className="h-3 w-3" />
-                                            <span className="sr-only">Remove {file.name}</span>
-                                        </button>
-                                    </div>
-                                ))}
+                                <TooltipProvider>
+                                    <Tooltip>
+                                        <TooltipTrigger asChild>
+                                            <Button
+                                                type="button"
+                                                variant="ghost"
+                                                size="icon"
+                                                onClick={() => fileInputRef.current?.click()}
+                                                disabled={isSending}
+                                                className="h-9 w-9 rounded-full"
+                                            >
+                                                <Paperclip className="h-5 w-5" />
+                                            </Button>
+                                        </TooltipTrigger>
+                                        <TooltipContent side="top">
+                                            <p>Attach files</p>
+                                        </TooltipContent>
+                                    </Tooltip>
+                                </TooltipProvider>
+
+                                <TooltipProvider>
+                                    <Tooltip>
+                                        <TooltipTrigger asChild>
+                                            <Button
+                                                type="button"
+                                                variant="ghost"
+                                                size="icon"
+                                                disabled={true}
+                                                className="h-9 w-9 rounded-full text-muted-foreground"
+                                            >
+                                                <Mic className="h-5 w-5" />
+                                            </Button>
+                                        </TooltipTrigger>
+                                        <TooltipContent side="top">
+                                            <p>Voice input (coming soon)</p>
+                                        </TooltipContent>
+                                    </Tooltip>
+                                </TooltipProvider>
+
+                                <div className="flex-1" />
+
+                                <Button
+                                    type="button"
+                                    onClick={handleSubmit}
+                                    disabled={isSending || (!inputText.trim() && inputFiles.length === 0)}
+                                    className="rounded-full px-4 h-9"
+                                    size="sm"
+                                >
+                                    {isSending ? (
+                                        <>
+                                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                            Sending...
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Send className="h-4 w-4 mr-2" />
+                                            Send
+                                        </>
+                                    )}
+                                </Button>
                             </div>
                         </div>
-                    )}
-
-                    <div className="border-t p-2 flex items-center gap-2">
-                        <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" multiple />
-                        <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => fileInputRef.current?.click()}
-                            disabled={isSending}
-                            aria-label="Attach files"
-                        >
-                            <Paperclip className="h-5 w-5" />
-                        </Button>
-
-                        {/* Mic button (non-functional for audio recording as per requirement) */}
-                        <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            disabled={isSending} // Or true if functionality is not intended
-                            aria-label="Record audio (disabled)"
-                            className="text-muted-foreground hover:text-foreground"
-                        >
-                            <Mic className="h-5 w-5" />
-                        </Button>
-
-                        <div className="flex-1" />
-
-                        <Button
-                            type="button"
-                            onClick={handleSubmit}
-                            disabled={isSending || (!inputText.trim() && inputFiles.length === 0)}
-                            className="rounded-full px-4"
-                        >
-                            {isSending ? (
-                                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                            ) : (
-                                <Send className="h-4 w-4 mr-2" />
-                            )}
-                            Send
-                        </Button>
                     </div>
                 </div>
             </div>
