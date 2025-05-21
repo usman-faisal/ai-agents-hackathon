@@ -2,88 +2,127 @@ import { BadRequestException, Injectable, InternalServerErrorException } from '@
 import { MulterFile } from '../common/types/type';
 import { Message as PrismaMessage, ICP, MessageRole, Conversation, Prisma } from '@prisma/client';
 import { PrismaService } from 'src/common/services/prisma.service';
-import { GenerateIcpDto } from './dto/generate-icp.dto';
-import { CoreMessage, Message, ToolCallPart, ToolResultPart } from 'ai';
-import { getFileContentParts } from 'src/common/utils/hash';
+
 import { HttpService } from '@nestjs/axios';
 import { ICPSchema } from './dto/llm-icp-structure';
+
+interface PyTextContent {
+    type: "text";
+    text: string;
+}
+
+interface PyFileContent {
+    type: "file";
+    source_type: "base64";
+    data: string;
+    mime_type: string;
+}
+
+type PyContentType = PyTextContent | PyFileContent;
+
+interface PyMessage {
+    role: MessageRole; // Or string 'user', 'assistant'
+    content: string | PyContentType[];
+}
 
 @Injectable()
 export class IcpService {
     constructor(private readonly prismaService: PrismaService, private readonly httpService: HttpService) { }
 
-    private mapMessagesToLLMMessages(messages: Partial<PrismaMessage>[]): {role: string, content: string}[] {
-        return messages.map((message) => {
+    private mapPrismaMessagesToPyMessages(prismaMessages: Partial<PrismaMessage>[]): PyMessage[] {
+        return prismaMessages.map((message) => {
+            if (typeof message.content !== 'string') {
+                console.warn(`Prisma message content is not a string: ${typeof message.content}. Skipping or erroring.`);
+                throw new InternalServerErrorException("Unsupported Prisma message content type for history.")
+            }
             return {
                 content: message.content,
-                role: message.role,
-            }
-        })
+                role: message.role as MessageRole, // Ensure MessageRole from Prisma is compatible
+            };
+        });
     }
 
     async chatIcp(userId: string, prompt: string, files: MulterFile[]) {
         try {
             const user = await this.prismaService.user.findUnique({
-                where: {
-                    id: userId,
-                },
+                where: { id: userId },
                 include: {
                     icp: true,
                     conversation: {
                         include: {
-                            messages: {
-                                orderBy: {
-                                    createdAt: 'asc',
-                                },
-                            }
-                        }
-                    }
-                }
-            })
+                            messages: { orderBy: { createdAt: 'asc' } },
+                        },
+                    },
+                },
+            });
 
-            let conversation: Prisma.ConversationGetPayload<{
-                include: { messages: true }
-              }> | null = user.conversation;
-            
-            let icp: ICP | null = user.icp;
+            if (!user) {
+                throw new BadRequestException("User not found");
+            }
 
-            if (!user.conversation) {
-                // create conversation
+            let conversation = user.conversation;
+            let icp = user.icp;
+
+            if (!conversation) {
                 conversation = await this.prismaService.conversation.create({
-                    data: {
-                        userId: user.id,
-                    }, 
-                    include: {
-                        messages: true,
-                    }
-                })
+                    data: { userId: user.id },
+                    include: { messages: true },
+                });
             }
-            if (!user.icp) {
-                // create icp
+            if (!icp) {
                 icp = await this.prismaService.iCP.create({
-                    data: {
-                        userId: user.id,
-                        name: 'Default ICP',
-                    }
-                })
+                    data: { userId: user.id, name: 'Default ICP' },
+                });
             }
-            const constructMessages = this.mapMessagesToLLMMessages([...conversation.messages, {
-                role: 'user',
-                content: prompt,
-            }])
 
-            console.log(constructMessages, icp)
-            const llmResponse = await this.httpService.axiosRef.post(
-                'http://localhost:8000/icp/generate',
-                {
-                    messages: constructMessages,
-                    icp: icp,
+            const historicalPyMessages: PyMessage[] = this.mapPrismaMessagesToPyMessages(conversation.messages);
+
+            const currentUserContentParts: PyContentType[] = [];
+
+            if (prompt && prompt.trim() !== "") {
+                currentUserContentParts.push({
+                    type: 'text',
+                    text: prompt,
+                });
+            }
+
+            if (files && files.length > 0) {
+                for (const file of files) {
+                    const base64Data = file.buffer.toString('base64');
+                    currentUserContentParts.push({
+                        type: 'file',
+                        source_type: 'base64',
+                        data: base64Data,
+                        mime_type: file.mimetype,
+                    });
                 }
-            )
+            }
 
-            console.log(llmResponse.data)
+            if (currentUserContentParts.length === 0) {
+                throw new BadRequestException("Prompt or files must be provided.")
+            }
 
-            const {ai_response_content, tool_call_args} = llmResponse.data;
+            const currentUserPyMessage: PyMessage = {
+                role: MessageRole.user, // Assuming MessageRole.user is 'user'
+                content: currentUserContentParts,
+            };
+
+            const messagesForPython: PyMessage[] = [...historicalPyMessages, currentUserPyMessage];
+
+            console.log("Sending to Python:", JSON.stringify({ messages: messagesForPython, icp }, null, 2)); // For debugging
+
+            const llmResponse = await this.httpService.axiosRef.post(
+                'http://localhost:8000/icp/generate', // Your Python service endpoint
+                {
+                    messages: messagesForPython,
+                    icpData: icp, // Ensure your Python service expects 'icpData'
+                                  // or change this key to 'icp' if that's what Python expects
+                }
+            );
+
+            console.log("LLM Response from Python:", llmResponse.data);
+
+            const { ai_response_content, tool_call_args } = llmResponse.data;
 
             if (tool_call_args !== null) {
                 const inputData = ICPSchema.parse(tool_call_args.input_data)
@@ -101,31 +140,32 @@ export class IcpService {
                     }
                 })
             }
-
-            await Promise.all([
-                await this.prismaService.message.create({
-                    data: {
-                        content: prompt,
+            
+            await this.prismaService.message.createMany({
+                data: [
+                    {
+                        content: prompt, // Or a serialized version of currentUserPyMessage.content
                         role: MessageRole.user,
                         conversationId: conversation.id,
-                    }
-                }),
-                await this.prismaService.message.create({
-                    data: {
-                        content: ai_response_content,
+                        // If you want to store files, you'd need a different schema or link to a file table
+                    },
+                    {
+                        content: ai_response_content, // This is expected to be a string
                         role: MessageRole.assistant,
                         conversationId: conversation.id,
-                    }
-                }),
-            ])
+                    },
+                ]
+            });
+
 
             return {
                 aiMessage: ai_response_content,
                 success: true,
-            }
-            
+            };
+
         } catch (error) {
-            console.error('Error generating ICP:', error.message);
+            console.error('Error in chatIcp:', error.response?.data || error.message, error.stack);
+            if (error instanceof BadRequestException) throw error;
             throw new InternalServerErrorException('Error generating ICP');
         }
     }
@@ -151,7 +191,7 @@ export class IcpService {
             throw new InternalServerErrorException('Error fetching ICP');
         }
     }
-    
+
 
     async getChats(userId: string) {
         try {
