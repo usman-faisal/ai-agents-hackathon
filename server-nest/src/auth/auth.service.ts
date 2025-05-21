@@ -27,7 +27,7 @@ export class AuthService {
 
   async register(
     { email, name, password, role }: RegisterDto,
-    image: MulterFile,
+    // image: MulterFile,
   ) {
     try {
       const userExists = await this.prisma.user.findUnique({
@@ -41,15 +41,15 @@ export class AuthService {
 
       const { hash, salt } = hashPassword(password);
 
-      const image_url = await this.uploadService.uploadFile(image);
-      if (!image_url)
-        throw throwError('Image upload failed', HttpStatus.BAD_REQUEST);
+      // const image_url = await this.uploadService.uploadFile(image);
+      // if (!image_url)
+      //   throw throwError('Image upload failed', HttpStatus.BAD_REQUEST);
 
       const user = await this.prisma.user.create({
         data: {
           email,
           name,
-          profileImage: image_url.filename,
+          // profileImage: image_url.filename,
           password: hash,
           salt,
           role,

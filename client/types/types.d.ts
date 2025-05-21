@@ -35,3 +35,13 @@ export interface IUser {
   hasNotifications: boolean;
   isEmailVerified: boolean;
 }
+
+export interface Message {
+  id: string;
+  sender: "user" | "bot" | "system";
+  text: string;
+  files?: File[]; // Files sent by the user
+  fileNames?: string[]; // Or just filenames if displaying bot's "awareness" of files
+  timestamp: Date;
+  isLoading?: boolean; // For bot's temporary "typing" message
+}
