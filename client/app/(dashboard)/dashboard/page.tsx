@@ -7,9 +7,9 @@ import { SidebarProvider } from "@/components/ui/sidebar";
 export default function Home() {
     return (
         <div className={cn("flex flex-col items-center justify-center w-full   min-h-screen gap-9")}>
-                <SidebarProvider   defaultOpen={true}>
-                    <ChatInterface />
-                </SidebarProvider>
+            <SidebarProvider defaultOpen={true}>
+                <ChatInterface />
+            </SidebarProvider>
         </div>
     );
 }
